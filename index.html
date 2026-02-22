@@ -6,21 +6,21 @@
 <meta name="theme-color" content="#1A6B3C"/>
 <meta name="description" content="Intégral — Menu Digital Premium, Restaurant Cissin. Découvrez notre carte, passez commande et profitez d'une expérience culinaire unique."/>
 <meta name="robots" content="index, follow"/>
-<meta name="author" content="Restaurant Intégral Cissin"/>
+<meta name="author" content="Integral Restaurant Bar &amp; Café, Cissin"/>
 
 <!-- Open Graph / Réseaux sociaux -->
 <meta property="og:type" content="website"/>
-<meta property="og:title" content="Intégral — Menu Digital Premium"/>
-<meta property="og:description" content="Découvrez le menu digital du Restaurant Intégral à Cissin. Commandez facilement depuis votre table."/>
+<meta property="og:title" content="Integral Restaurant Bar &amp; Café — Menu Digital"/>
+<meta property="og:description" content="Découvrez le menu digital du Integral Restaurant Bar &amp; Café à Cissin. Commandez facilement depuis votre table."/>
 <meta property="og:locale" content="fr_FR"/>
 
 <!-- PWA -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Intégral Menu"/>
+<meta name="apple-mobile-web-app-title" content="Integral Restaurant Bar &amp; Café"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 
-<title>Intégral — Menu Digital Premium</title>
+<title>Integral Restaurant Bar &amp; Café — Menu Digital</title>
 <link rel="manifest" href="manifest.json"/>
 <link rel="canonical" href="https://integral-menu.vercel.app/"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -230,7 +230,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .topbar-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
 .brand-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--g),var(--g2));border-radius:9px;display:flex;align-items:center;justify-content:center}
 .brand-mark svg{width:18px;height:18px;fill:#fff}
-.brand-name{font-family:'Cormorant Garamond',serif;font-size:1.45rem;letter-spacing:1.5px;font-weight:700}
+.brand-name{font-family:'Cormorant Garamond',serif;font-size:1.1rem;letter-spacing:.8px;font-weight:700}
 .brand-name em{color:var(--gold);font-style:normal}
 .topbar-actions{display:flex;gap:8px;align-items:center}
 .btn-icon{background:rgba(255,255,255,.09);border:1.5px solid rgba(255,255,255,.12);color:#fff;width:38px;height:38px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--t);position:relative;flex-shrink:0}
@@ -514,7 +514,8 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
 
 <!-- LOADER -->
 <div id="loader">
-  <div class="loader-logo">Intégral<span>.</span></div>
+  <img src="logo.png" alt="Integral Logo" style="width:90px;height:90px;object-fit:contain;margin-bottom:14px;filter:brightness(0) invert(1)"/>
+  <div class="loader-logo" style="font-size:1.5rem;letter-spacing:2px">Integral Restaurant Bar<span> & Café</span></div>
   <div class="loader-sub">Menu Digital Premium</div>
   <div class="loader-bar"><div class="loader-fill"></div></div>
   <div class="loader-dots">
@@ -530,10 +531,10 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
 <!-- TOP BAR -->
 <div id="topbar">
   <div class="topbar-brand">
-    <div class="brand-mark">
-      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+    <div class="brand-mark" style="background:none;padding:0;width:40px;height:40px;border-radius:0">
+      <img src="logo.png" alt="Integral Logo" style="width:40px;height:40px;object-fit:contain"/>
     </div>
-    <div class="brand-name">Inté<em>gral</em></div>
+    <div class="brand-name" style="font-size:1.1rem;letter-spacing:.8px">Integral <em>Restaurant</em> Bar & Café</div>
   </div>
   <div class="topbar-actions">
     <div class="fb-pill" title="État Firebase">
@@ -559,24 +560,22 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
   <div class="hero-bg-pattern"></div>
   <div class="hero-orb hero-orb-1"></div>
   <div class="hero-orb hero-orb-2"></div>
-  <h1>La Carte <em>Intégral</em></h1>
+  <img src="logo.png" alt="Integral Logo" style="width:80px;height:80px;object-fit:contain;margin-bottom:12px;position:relative;z-index:1;filter:brightness(0) invert(1)"/>
+  <h1>Integral <em>Restaurant</em><br>Bar & Café</h1>
   <p>Ouagadougou · Burkina Faso</p>
   <div class="hero-divider"></div>
   <div class="hero-tags">
+    <!-- Bouton Réserver un salon -->
+    <button class="hero-tag hero-tag-reserve" onclick="openSalonModal()" style="cursor:pointer;border:none;background:linear-gradient(135deg,rgba(201,168,76,.25),rgba(201,168,76,.12));border:1.5px solid rgba(201,168,76,.5);color:#fff;font-family:'DM Sans',sans-serif;font-size:.72rem;font-weight:600;padding:8px 16px;border-radius:30px;display:inline-flex;align-items:center;gap:7px;transition:all .22s ease;backdrop-filter:blur(4px)">
+      <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:var(--gold);flex-shrink:0"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+      Réserver un salon
+    </button>
     <span class="hero-tag">
-      <img src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=20&h=20&fit=crop" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
-      Pizzeria
-    </span>
-    <span class="hero-tag">
-      <img src="https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=20&h=20&fit=crop" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
-      Bar & Cocktails
-    </span>
-    <span class="hero-tag">
-      <img src="https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=20&h=20&fit=crop" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
+      <img src="https://images.unsplash.com/photo-1544025162-d76694265947?w=40&h=40&fit=crop&q=80" alt="Grillades" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
       Grillades
     </span>
     <span class="hero-tag">
-      <img src="https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=20&h=20&fit=crop" alt="" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
+      <img src="https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=40&h=40&fit=crop&q=80" alt="Café" style="width:16px;height:16px;border-radius:3px;object-fit:cover"/>
       Café & Thés
     </span>
   </div>
@@ -589,12 +588,101 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
      title="Ouvrir dans Google Maps">
     <span class="loc-pulse"></span>
     <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-    Nous trouver — Restaurant Intégral
+    Nous trouver — Integral Restaurant Bar & Café
   </a>
 </div>
 
 <!-- NAV TABS -->
 <div id="navWrapper"><div id="nav"></div></div>
+
+<!-- ══ MODAL RÉSERVATION SALON ══════════════════════════════ -->
+<div id="salonModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:950;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(5px)">
+  <div style="background:var(--white);border-radius:22px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.35);animation:modalIn .3s cubic-bezier(.4,0,.2,1)">
+    <!-- En-tête -->
+    <div style="background:linear-gradient(135deg,var(--dark2),#2A3830);color:#fff;padding:22px 24px;border-radius:22px 22px 0 0;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h3 style="font-family:'Cormorant Garamond',serif;font-size:1.5rem;font-weight:700;display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 24 24" style="width:22px;height:22px;fill:var(--gold)"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+          Réserver un Salon
+        </h3>
+        <p style="font-size:.74rem;opacity:.55;margin-top:4px;font-family:'DM Sans',sans-serif">Integral Restaurant Bar & Café · Ouagadougou</p>
+      </div>
+      <button onclick="closeSalonModal()" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#fff;width:36px;height:36px;border-radius:9px;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:var(--t)" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.1)'">✕</button>
+    </div>
+
+    <!-- Corps du formulaire -->
+    <div style="padding:24px" id="salonFormWrap">
+      <!-- Intro -->
+      <div style="background:var(--g4);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:20px;display:flex;gap:10px;align-items:flex-start">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:var(--g);flex-shrink:0;margin-top:2px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+        <p style="font-size:.78rem;color:var(--mid);line-height:1.6">Remplissez ce formulaire pour réserver votre salon privé. Nous vous confirmerons votre réservation dans les <strong>24h</strong> par téléphone ou WhatsApp.</p>
+      </div>
+
+      <!-- Champs -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Nom complet *</label>
+          <input id="sr-nom" type="text" placeholder="Votre nom" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t)" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'"/>
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Téléphone / WhatsApp *</label>
+          <input id="sr-tel" type="tel" placeholder="+226 XX XX XX XX" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t)" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'"/>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Date souhaitée *</label>
+          <input id="sr-date" type="date" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t)" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'"/>
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Heure souhaitée *</label>
+          <input id="sr-heure" type="time" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t)" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'"/>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Nombre de personnes *</label>
+          <select id="sr-nbr" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t);cursor:pointer" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'">
+            <option value="">-- Choisir --</option>
+            <option>1 – 5 personnes</option>
+            <option>6 – 10 personnes</option>
+            <option>11 – 20 personnes</option>
+            <option>21 – 30 personnes</option>
+            <option>30+ personnes</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Occasion</label>
+          <select id="sr-occasion" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);transition:var(--t);cursor:pointer" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'">
+            <option value="">-- Optionnel --</option>
+            <option>Anniversaire 🎂</option>
+            <option>Réunion professionnelle 💼</option>
+            <option>Repas de famille 👨‍👩‍👧‍👦</option>
+            <option>Soirée entre amis 🥂</option>
+            <option>Mariage / Fiançailles 💍</option>
+            <option>Autre</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label style="font-size:.72rem;font-weight:700;color:var(--mid);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px">Message / Demandes spéciales</label>
+        <textarea id="sr-message" rows="3" placeholder="Ex : décoration souhaitée, régime alimentaire, besoins spécifiques…" style="width:100%;border:2px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;background:var(--white);color:var(--dark);resize:none;transition:var(--t)" onfocus="this.style.borderColor='var(--g)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+      </div>
+
+      <!-- Boutons -->
+      <button onclick="submitSalonReservation()" style="width:100%;background:linear-gradient(135deg,var(--g),var(--g2));color:#fff;border:none;border-radius:12px;padding:14px;font-size:.95rem;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 4px 16px rgba(26,107,60,.3);transition:var(--t);margin-bottom:10px" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 22px rgba(26,107,60,.42)'" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 16px rgba(26,107,60,.3)'">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.116 1.523 5.845L.057 23.273a.75.75 0 00.92.92l5.428-1.466A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
+        Envoyer via WhatsApp
+      </button>
+      <button onclick="closeSalonModal()" style="width:100%;background:var(--white);color:var(--mid);border:1.5px solid var(--border);border-radius:12px;padding:11px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:var(--t)" onmouseover="this.style.borderColor='var(--g)';this.style.color='var(--g)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--mid)'">
+        Annuler
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- SEARCH -->
 <div class="search-bar">
@@ -1912,6 +2000,59 @@ document.addEventListener('keydown', e => {
       toggleFullscreen();
     }
   }
+});
+
+// ══ SALON MODAL ══════════════════════════════════
+function openSalonModal(){
+  const m = document.getElementById('salonModal');
+  m.style.display = 'flex';
+  // Set min date to today
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('sr-date').min = today;
+  document.body.style.overflow = 'hidden';
+}
+function closeSalonModal(){
+  document.getElementById('salonModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+function submitSalonReservation(){
+  const nom     = document.getElementById('sr-nom').value.trim();
+  const tel     = document.getElementById('sr-tel').value.trim();
+  const date    = document.getElementById('sr-date').value;
+  const heure   = document.getElementById('sr-heure').value;
+  const nbr     = document.getElementById('sr-nbr').value;
+  const occasion= document.getElementById('sr-occasion').value;
+  const msg     = document.getElementById('sr-message').value.trim();
+
+  if(!nom || !tel || !date || !heure || !nbr){
+    showToast('Veuillez remplir tous les champs obligatoires (*)', 'red');
+    return;
+  }
+
+  const dateF = new Date(date).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const lines = [
+    '🍽️ *RÉSERVATION SALON — Integral Restaurant Bar & Café*',
+    '━━━━━━━━━━━━━━━━━━━━━━━━',
+    `👤 *Nom :* ${nom}`,
+    `📞 *Téléphone :* ${tel}`,
+    `📅 *Date :* ${dateF}`,
+    `🕐 *Heure :* ${heure}`,
+    `👥 *Personnes :* ${nbr}`,
+    occasion ? `🎉 *Occasion :* ${occasion}` : '',
+    msg ? `💬 *Message :* ${msg}` : '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━',
+    '_Merci de confirmer cette réservation_ 🙏'
+  ].filter(Boolean).join('\n');
+
+  const waNumber = (window.CONFIG && CONFIG.waNumber) || '22600000000';
+  const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(lines)}`;
+  window.open(waUrl, '_blank');
+  closeSalonModal();
+  showToast('Redirection WhatsApp...', 'green');
+}
+// Fermer le modal en cliquant sur le fond
+document.getElementById('salonModal').addEventListener('click', function(e){
+  if(e.target === this) closeSalonModal();
 });
 
 // ══ LOADER & INIT ════════════════════════════════
