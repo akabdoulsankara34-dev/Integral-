@@ -249,7 +249,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 /* ── HERO ────────────────────────────────────── */
 #hero{background:linear-gradient(150deg,#0D3320 0%,var(--g) 50%,#1D8A50 100%);padding:70px 24px 44px;text-align:center;position:relative;overflow:hidden;height:56.25vw;min-height:420px;max-height:680px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .hero-bg-pattern{position:absolute;inset:0;opacity:.04;background-image:radial-gradient(circle,#fff 1px,transparent 1px);background-size:30px 30px}
-.hero-orb{position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none}
+.hero-orb{position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none;z-index:-1}
 .hero-orb-1{top:-80px;right:-80px;width:300px;height:300px;background:rgba(201,168,76,.18)}
 .hero-orb-2{bottom:-60px;left:-60px;width:240px;height:240px;background:rgba(46,125,82,.35)}
 #hero h1{font-family:'Cormorant Garamond',serif;color:#fff;font-size:clamp(2rem,7vw,3.4rem);position:relative;z-index:1;line-height:1.15}
@@ -268,7 +268,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .hero-slideshow{position:absolute;inset:0;z-index:0;overflow:hidden}
 .hero-slide{position:absolute;inset:0;background-size:cover;background-position:center 40%;opacity:0;transition:opacity 1.2s ease;will-change:opacity}
 .hero-slide.active{opacity:1}
-.hero-slideshow::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.50) 100%);z-index:1;pointer-events:none}
+.hero-slideshow::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.50) 100%);z-index:1;pointer-events:z-index:-1}
 #hero .hero-bg-pattern,#hero .hero-orb,#hero > img,#hero h1,#hero p,
 #hero .hero-divider,#hero .hero-tags,#hero .hero-location-btn{position:relative;z-index:2}
 .hero-dots{display:flex;gap:6px;justify-content:center;margin-top:14px;position:relative;z-index:2}
