@@ -2154,7 +2154,7 @@ function submitSalonReservation(){
     '_Merci de confirmer cette réservation_ 🙏'
   ].filter(Boolean).join('\n');
 
-  const waNumber = (window.CONFIG && CONFIG.waNumber) || '22600000000';
+  const waNumber = (window.CONFIG && CONFIG.waNumber) || '22654470091';
   const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(lines)}`;
   window.open(waUrl, '_blank');
   closeSalonModal();
