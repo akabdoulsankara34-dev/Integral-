@@ -30,22 +30,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 
 <!-- ══ FIREBASE SDK ══════════════════════════════════════ -->
-<!--
-  ⚙️  CONFIGURATION FIREBASE — NOUVEAU PROJET (europe-west1 / Belgique)
-  ════════════════════════════════════════════════════════════════════
-  ÉTAPES DE CRÉATION DU NOUVEAU PROJET :
-  1. Allez sur https://console.firebase.google.com
-  2. Cliquez "Ajouter un projet" → donnez un nom (ex: integral-menu)
-  3. Dans Firestore → "Créer une base de données"
-     → Choisissez "europe-west1 (Belgique)" ← IMPORTANT
-     → Mode Production ou Test
-  4. Copiez la config ci-dessous depuis :
-     Paramètres projet ⚙️ → Vos applications → SDK
-  5. Collections à créer dans Firestore :
-     • menu_overrides  (documents avec ID = clé du plat)
-     • orders          (commandes des clients)
-  ════════════════════════════════════════════════════════════════════
--->
 <script type="module">
   import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, getDocs, addDoc, doc, setDoc,
@@ -65,7 +49,6 @@
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // Activer la région europe-west1 pour les nouvelles requêtes
   window.__DB = db;
   window.__fb = { collection, getDocs, addDoc, doc, setDoc,
                   deleteDoc, onSnapshot, serverTimestamp };
@@ -74,9 +57,16 @@
   function itemKey(item){
     return (item.cat + '_' + item.nom).replace(/[^a-z0-9]/gi,'_').toLowerCase();
   }
+  window.itemKey = itemKey; // Expose pour usage externe
+
+  // ══ Flag pour éviter double application des overrides lors d'une écriture locale ══
+  let _applyingRemote = false;
+  window._applyingRemote = _applyingRemote;
 
   // ── Applique les overrides sur le MENU en mémoire ────────────
   function applyOverrides(overrides){
+    if (_applyingRemote) return; // Ignore si causé par notre propre sauvegarde
+    _applyingRemote = true;
     window.MENU.forEach(item => {
       const key = itemKey(item);
       const ov  = overrides[key];
@@ -89,6 +79,7 @@
     if(document.getElementById('tab-menu')?.style.display !== 'none'){
       window.renderMenuEditor && window.renderMenuEditor();
     }
+    _applyingRemote = false;
   }
 
   // ── Indicateur connexion (point vert/rouge) ───────────────────
@@ -122,6 +113,7 @@
 
   // ── Sauvegarder un plat (prix / img / dispo) ─────────────────
   window.fbSaveItem = async function(item){
+    _applyingRemote = true;
     try {
       const key  = item._key || itemKey(item);
       const data = {};
@@ -133,6 +125,7 @@
       await setDoc(doc(db, 'menu_overrides', key), data, { merge: true });
       return true;
     } catch(e){ console.error(e); return false; }
+    finally { _applyingRemote = false; }
   };
 
   // ── Supprimer un plat personnalisé ───────────────────────────
@@ -268,7 +261,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .hero-slideshow{position:absolute;inset:0;z-index:0;overflow:hidden}
 .hero-slide{position:absolute;inset:0;background-size:cover;background-position:center 40%;opacity:0;transition:opacity 1.2s ease;will-change:opacity}
 .hero-slide.active{opacity:1}
-.hero-slideshow::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.50) 100%);z-index:1;pointer-events:none}
+.hero-slideshow::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.50) 100%);z-index:1;pointer-events:z-index:-1}
 #hero .hero-bg-pattern,#hero .hero-orb,#hero > img,#hero h1,#hero p,
 #hero .hero-divider,#hero .hero-tags,#hero .hero-location-btn{position:relative;z-index:2}
 .hero-dots{display:flex;gap:6px;justify-content:center;margin-top:14px;position:relative;z-index:2}
@@ -814,11 +807,10 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
 <div id="hero">
   <!-- ══ DIAPORAMA PHOTOS ══
        Remplacez les URL par vos propres photos du restaurant (ex: photo1.jpg) -->
-  <div class="hero-slideshow">
-    <div class="hero-slide active" style="background-image:url('images/photo1.jpg')"></div>
-    <div class="hero-slide" style="background-image:url('images/photo2.jpg')"></div>
-    <div class="hero-slide" style="background-image:url('images/photo3.jpg')"></div>
-    <div class="hero-slide" style="background-image:url('images/photo4.jpg')"></div>
+<div class="hero-slide active" style="background-image:url('images/photo1.jpg')"></div>
+<div class="hero-slide" style="background-image:url('images/photo2.jpg')"></div>
+<div class="hero-slide" style="background-image:url('images/photo3.jpg')"></div>
+<div class="hero-slide" style="background-image:url('images/photo4.jpg')"></div>
   </div>
 
   <div class="hero-bg-pattern"></div>
@@ -877,6 +869,7 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
     <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
     Nous trouver — Integral Restaurant Bar & Café
   </a>
+  <!-- Points indicateurs diaporama -->
   <div class="hero-dots" id="heroDots">
     <button class="hero-dot active" onclick="goSlide(0)"></button>
     <button class="hero-dot" onclick="goSlide(1)"></button>
@@ -2237,17 +2230,22 @@ async function saveItem(){
   saveBtn.textContent = 'Enregistrement…'; saveBtn.disabled = true;
 
   const i = idx !== '' ? parseInt(idx) : -1;
+  let oldKey = null;
   if(i >= 0 && window.MENU[i]){
+    oldKey = window.itemKey(window.MENU[i]);
     window.MENU[i] = { ...window.MENU[i], nom, prix, cat, img, dispo };
   } else {
     window.MENU.push({ cat, nom, prix, img, dispo });
   }
 
+  const newKey = (cat + '_' + nom).replace(/[^a-z0-9]/gi,'_').toLowerCase();
+
   try {
-    if(window.fbSaveItem){
-      const key = (cat+'_'+nom).replace(/[^a-z0-9]/gi,'_').toLowerCase();
-      await window.fbSaveItem({ _key:key, prix, img, cat, nom, dispo });
+    // Si la clé a changé (modification de nom ou catégorie), supprimer l'ancien document
+    if(oldKey && oldKey !== newKey){
+      await window.fbDeleteItem(oldKey);
     }
+    await window.fbSaveItem({ _key: newKey, prix, img, cat, nom, dispo });
     showToast('Enregistré avec succès !','green');
   } catch(e){
     showToast('Enregistré en local','');
