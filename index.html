@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr" data-theme="light">
 <head>
@@ -30,30 +29,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 
-<!-- ══ FIREBASE SDK ══════════════════════════════════════ -->
-<!--
-  ⚙️  CONFIGURATION FIREBASE — NOUVEAU PROJET (europe-west1 / Belgique)
-  ════════════════════════════════════════════════════════════════════
-  ÉTAPES DE CRÉATION DU NOUVEAU PROJET :
-  1. Allez sur https://console.firebase.google.com
-  2. Cliquez "Ajouter un projet" → donnez un nom (ex: integral-menu)
-  3. Dans Firestore → "Créer une base de données"
-     → Choisissez "europe-west1 (Belgique)" ← IMPORTANT
-     → Mode Production ou Test
-  4. Copiez la config ci-dessous depuis :
-     Paramètres projet ⚙️ → Vos applications → SDK
-  5. Collections à créer dans Firestore :
-     • menu_overrides  (documents avec ID = clé du plat)
-     • orders          (commandes des clients)
-  ════════════════════════════════════════════════════════════════════
--->
+<!-- ══ FIREBASE SDK - VERSION CORRIGÉE ══════════════════════════════════════ -->
 <script type="module">
   import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, addDoc, doc, setDoc,
-           deleteDoc, onSnapshot, serverTimestamp }
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { 
+    getFirestore, 
+    collection, 
+    getDocs, 
+    addDoc, 
+    doc, 
+    setDoc,
+    deleteDoc, 
+    onSnapshot, 
+    serverTimestamp,
+    enableMultiTabIndexedDbPersistence,
+    enableIndexedDbPersistence,
+    writeBatch,
+    query,
+    orderBy
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // ── Remplacez ces valeurs par celles de votre NOUVEAU projet ──
+  // ── Configuration Firebase ───────────────────────────────────────
   const firebaseConfig = {
     apiKey:            "AIzaSyCIkeCTeqjAWEFML3rkNQs-NWs1b4Lu5Jg",
     authDomain:        "integral-bar-resto.firebaseapp.com",
@@ -66,106 +62,403 @@
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // Activer la région europe-west1 pour les nouvelles requêtes
-  window.__DB = db;
-  window.__fb = { collection, getDocs, addDoc, doc, setDoc,
-                  deleteDoc, onSnapshot, serverTimestamp };
-
-  // ── Clé unique par plat ───────────────────────────────────────
-  function itemKey(item){
-    return (item.cat + '_' + item.nom).replace(/[^a-z0-9]/gi,'_').toLowerCase();
-  }
-
-  // ── Applique les overrides sur le MENU en mémoire ────────────
-  function applyOverrides(overrides){
-    window.MENU.forEach(item => {
-      const key = itemKey(item);
-      const ov  = overrides[key];
-      if(!ov) return;
-      if(ov.prix  !== undefined) item.prix  = ov.prix;
-      if(ov.img   !== undefined) item.img   = ov.img;
-      if(ov.dispo !== undefined) item.dispo = ov.dispo;
-    });
-    window.renderMenu && window.renderMenu();
-    if(document.getElementById('tab-menu')?.style.display !== 'none'){
-      window.renderMenuEditor && window.renderMenuEditor();
+  // ── Activer la persistance OFFLINE (multi-onglets) ──────────────
+  try {
+    await enableMultiTabIndexedDbPersistence(db);
+    console.log('✅ Firestore : Persistance multi-onglets activée');
+  } catch (err) {
+    if (err.code === 'failed-precondition') {
+      console.warn('⚠️ Persistance déjà activée dans un autre onglet');
+    } else if (err.code === 'unimplemented') {
+      console.warn('⚠️ Navigateur ne supporte pas la persistance');
+    } else {
+      console.error('❌ Erreur persistance:', err);
     }
   }
 
-  // ── Indicateur connexion (point vert/rouge) ───────────────────
-  function setFbDot(ok){
+  // Exposer les fonctions Firestore globalement
+  window.__DB = db;
+  window.__fb = { 
+    collection, getDocs, addDoc, doc, setDoc, deleteDoc, 
+    onSnapshot, serverTimestamp, writeBatch, query, orderBy 
+  };
+
+  // ── État de connexion amélioré ──────────────────────────────────
+  let isOnline = true;
+  let reconnectTimer = null;
+  let menuUnsubscribe = null;
+  let ordersUnsubscribe = null;
+  
+  const connectionState = {
+    firestore: false,
+    network: navigator.onLine
+  };
+
+  function updateConnectionUI() {
     const dot = document.getElementById('fbDot');
     const lbl = document.getElementById('fbLabel');
-    if(dot){ dot.classList.toggle('ok', ok); }
-    if(lbl){ lbl.textContent = ok ? 'En ligne' : 'Local'; }
+    const isConnected = connectionState.firestore && connectionState.network;
+    
+    if (dot) {
+      dot.classList.toggle('ok', isConnected);
+      dot.style.background = isConnected ? '#51cf66' : '#ff6b6b';
+    }
+    if (lbl) {
+      if (!connectionState.network) lbl.textContent = 'Hors ligne';
+      else if (!connectionState.firestore) lbl.textContent = 'Connexion...';
+      else lbl.textContent = 'En ligne';
+    }
   }
-  window._setFbDot = setFbDot;
 
-  // ── Écoute temps réel du menu (onSnapshot) ───────────────────
-  function startMenuListener(){
+  // Surveiller l'état réseau
+  window.addEventListener('online', () => {
+    connectionState.network = true;
+    updateConnectionUI();
+    showToast && showToast('Connexion Internet rétablie', 'green');
+    // Réessayer la connexion Firestore
+    startMenuListener();
+  });
+
+  window.addEventListener('offline', () => {
+    connectionState.network = false;
+    updateConnectionUI();
+    showToast && showToast('Mode hors ligne - Les modifications seront synchronisées', 'gold');
+  });
+
+  window._setFbDot = (ok) => {
+    connectionState.firestore = ok;
+    updateConnectionUI();
+  };
+
+  // ── Clé unique par plat ─────────────────────────────────────────
+  function itemKey(item) {
+    return (item.cat + '_' + item.nom)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase();
+  }
+
+  // ── Fusion intelligente des overrides ───────────────────────────
+  function applyOverrides(overrides) {
+    let changed = false;
+    
+    window.MENU.forEach(item => {
+      const key = itemKey(item);
+      const ov = overrides[key];
+      if (!ov) return;
+      
+      // Ne mettre à jour que si différent
+      if (ov.prix !== undefined && ov.prix !== item.prix) {
+        item.prix = ov.prix;
+        changed = true;
+      }
+      if (ov.img !== undefined && ov.img !== item.img) {
+        item.img = ov.img;
+        changed = true;
+      }
+      if (ov.dispo !== undefined && ov.dispo !== item.dispo) {
+        item.dispo = ov.dispo;
+        changed = true;
+      }
+      // Stocker la référence Firestore pour les mises à jour
+      item._firestoreKey = key;
+    });
+    
+    if (changed) {
+      // Re-rendre le menu uniquement si des changements
+      window.renderMenu && window.renderMenu();
+      if (document.getElementById('tab-menu')?.style.display !== 'none') {
+        window.renderMenuEditor && window.renderMenuEditor();
+      }
+      
+      // Mettre à jour les quantités dans les cartes
+      if (window.updateAllCardQtyDisplays) {
+        setTimeout(() => window.updateAllCardQtyDisplays(), 50);
+      }
+      
+      showToast && showToast('🍽️ Menu mis à jour depuis le cloud', 'gold');
+    }
+  }
+
+  // ── Écoute temps réel du menu (onSnapshot) avec reconnexion ─────
+  function startMenuListener() {
+    if (menuUnsubscribe) {
+      menuUnsubscribe();
+      menuUnsubscribe = null;
+    }
+    
     try {
-      onSnapshot(collection(db, 'menu_overrides'), snap => {
-        const overrides = {};
-        snap.forEach(d => { overrides[d.id] = d.data(); });
-        window.__overrides = overrides;
-        applyOverrides(overrides);
-        setFbDot(true);
-      }, err => {
-        console.warn('Firebase:', err.message);
-        window.renderMenu && window.renderMenu();
-        setFbDot(false);
-      });
-    } catch(e){
+      const menuRef = collection(db, 'menu_overrides');
+      
+      menuUnsubscribe = onSnapshot(menuRef, 
+        (snap) => {
+          const overrides = {};
+          snap.forEach(d => { overrides[d.id] = d.data(); });
+          window.__overrides = overrides;
+          
+          connectionState.firestore = true;
+          updateConnectionUI();
+          
+          applyOverrides(overrides);
+          
+          // Effacer le timer de reconnexion si actif
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        },
+        (err) => {
+          console.warn('Firestore error:', err.message);
+          connectionState.firestore = false;
+          updateConnectionUI();
+          
+          // Tentative de reconnexion après 5 secondes
+          if (!reconnectTimer && connectionState.network) {
+            reconnectTimer = setTimeout(() => {
+              console.log('🔄 Tentative de reconnexion Firestore...');
+              startMenuListener();
+              reconnectTimer = null;
+            }, 5000);
+          }
+          
+          // Le menu reste fonctionnel en local
+          window.renderMenu && window.renderMenu();
+        }
+      );
+      
+      console.log('📡 Écoute Firestore activée');
+    } catch (e) {
       console.warn('Firebase local mode:', e.message);
+      connectionState.firestore = false;
+      updateConnectionUI();
       window.renderMenu && window.renderMenu();
     }
   }
 
-  // ── Sauvegarder un plat (prix / img / dispo) ─────────────────
-  window.fbSaveItem = async function(item){
+  // ── Sauvegarder un plat avec gestion d'erreur améliorée ─────────
+  window.fbSaveItem = async function(item) {
+    if (!connectionState.network) {
+      showToast && showToast('📴 Mode hors ligne - Sauvegarde locale', 'gold');
+      // Sauvegarde dans localStorage pour synchronisation ultérieure
+      saveToPendingSync(item);
+      return true;
+    }
+    
     try {
-      const key  = item._key || itemKey(item);
-      const data = {};
-      if(item.prix  !== undefined) data.prix  = item.prix;
-      if(item.img   !== undefined) data.img   = item.img;
-      if(item.dispo !== undefined) data.dispo = item.dispo;
-      if(item.cat   !== undefined) data.cat   = item.cat;
-      if(item.nom   !== undefined) data.nom   = item.nom;
+      const key = item._key || itemKey(item);
+      const data = {
+        updatedAt: serverTimestamp(),
+        updatedBy: 'admin'
+      };
+      
+      if (item.prix !== undefined) data.prix = item.prix;
+      if (item.img !== undefined) data.img = item.img;
+      if (item.dispo !== undefined) data.dispo = item.dispo;
+      if (item.cat !== undefined) data.cat = item.cat;
+      if (item.nom !== undefined) data.nom = item.nom;
+      
       await setDoc(doc(db, 'menu_overrides', key), data, { merge: true });
+      
+      showToast && showToast('✅ Synchronisé avec le cloud', 'green');
       return true;
-    } catch(e){ console.error(e); return false; }
+    } catch (e) {
+      console.error('Erreur sauvegarde:', e);
+      showToast && showToast('⚠️ Erreur de synchronisation', 'red');
+      // Sauvegarde pour réessayer plus tard
+      saveToPendingSync(item);
+      return false;
+    }
   };
 
-  // ── Supprimer un plat personnalisé ───────────────────────────
-  window.fbDeleteItem = async function(key){
-    try { await deleteDoc(doc(db, 'menu_overrides', key)); return true; }
-    catch(e){ console.error(e); return false; }
-  };
-
-  // ── Enregistrer une commande ──────────────────────────────────
-  window.fbSaveOrder = async function(order){
-    try {
-      await addDoc(collection(db, 'orders'), {
-        ...order, createdAt: serverTimestamp()
-      });
-      return true;
-    } catch(e){ console.error(e); return false; }
-  };
-
-  // ── Écouter les commandes en temps réel ──────────────────────
-  window.fbListenOrders = function(callback){
-    return onSnapshot(collection(db, 'orders'), snap => {
-      const orders = [];
-      snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
-      orders.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-      callback(orders);
+  // ── File d'attente de synchronisation ───────────────────────────
+  const pendingSync = new Map();
+  
+  function saveToPendingSync(item) {
+    const key = item._key || itemKey(item);
+    pendingSync.set(key, {
+      ...item,
+      _pending: true,
+      _timestamp: Date.now()
     });
+    
+    // Sauvegarder dans localStorage
+    try {
+      const pending = Array.from(pendingSync.entries());
+      localStorage.setItem('integral_pending_sync', JSON.stringify(pending));
+    } catch (e) {}
+  }
+  
+  // Charger les synchronisations en attente
+  function loadPendingSync() {
+    try {
+      const saved = localStorage.getItem('integral_pending_sync');
+      if (saved) {
+        const pending = JSON.parse(saved);
+        pending.forEach(([key, data]) => {
+          pendingSync.set(key, data);
+        });
+      }
+    } catch (e) {}
+  }
+  
+  // Synchroniser les éléments en attente
+  async function syncPendingItems() {
+    if (!connectionState.network || !connectionState.firestore) return;
+    
+    const items = Array.from(pendingSync.entries());
+    if (items.length === 0) return;
+    
+    console.log(`📤 Synchronisation de ${items.length} élément(s) en attente...`);
+    
+    const batch = writeBatch(db);
+    let count = 0;
+    
+    for (const [key, item] of items) {
+      const data = {
+        prix: item.prix,
+        img: item.img,
+        dispo: item.dispo,
+        cat: item.cat,
+        nom: item.nom,
+        updatedAt: serverTimestamp()
+      };
+      
+      const docRef = doc(db, 'menu_overrides', key);
+      batch.set(docRef, data, { merge: true });
+      count++;
+      
+      // Firestore limite à 500 opérations par batch
+      if (count >= 450) break;
+    }
+    
+    try {
+      await batch.commit();
+      
+      // Supprimer les éléments synchronisés
+      items.slice(0, count).forEach(([key]) => pendingSync.delete(key));
+      localStorage.removeItem('integral_pending_sync');
+      
+      if (items.length > 0) {
+        showToast && showToast(`✅ ${count} élément(s) synchronisé(s)`, 'green');
+      }
+    } catch (e) {
+      console.error('Erreur synchronisation batch:', e);
+    }
+  }
+
+  // ── Supprimer un plat personnalisé ───────────────────────────────
+  window.fbDeleteItem = async function(key) {
+    try {
+      await deleteDoc(doc(db, 'menu_overrides', key));
+      showToast && showToast('🗑️ Plat supprimé du cloud', 'gold');
+      return true;
+    } catch (e) {
+      console.error('Erreur suppression:', e);
+      showToast && showToast('⚠️ Erreur de suppression', 'red');
+      return false;
+    }
   };
 
-  // ── Démarrer l'écoute menu au chargement ─────────────────────
+  // ── Enregistrer une commande ─────────────────────────────────────
+  window.fbSaveOrder = async function(order) {
+    try {
+      const orderData = {
+        ...order,
+        createdAt: serverTimestamp(),
+        status: 'nouveau',
+        deviceInfo: {
+          userAgent: navigator.userAgent.substring(0, 100),
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      const docRef = await addDoc(collection(db, 'orders'), orderData);
+      console.log('✅ Commande enregistrée:', docRef.id);
+      return true;
+    } catch (e) {
+      console.error('Erreur commande:', e);
+      // Sauvegarde locale de la commande
+      saveOrderLocally(order);
+      return false;
+    }
+  };
+  
+  // Sauvegarde locale des commandes
+  function saveOrderLocally(order) {
+    try {
+      const orders = JSON.parse(localStorage.getItem('integral_offline_orders') || '[]');
+      orders.push({
+        ...order,
+        _offline: true,
+        _timestamp: Date.now()
+      });
+      localStorage.setItem('integral_offline_orders', JSON.stringify(orders));
+    } catch (e) {}
+  }
+
+  // ── Écouter les commandes en temps réel ──────────────────────────
+  window.fbListenOrders = function(callback) {
+    if (ordersUnsubscribe) {
+      ordersUnsubscribe();
+    }
+    
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    ordersUnsubscribe = onSnapshot(ordersQuery, 
+      (snap) => {
+        const orders = [];
+        snap.forEach(d => {
+          orders.push({ id: d.id, ...d.data() });
+        });
+        callback(orders);
+      },
+      (err) => {
+        console.warn('Erreur écoute commandes:', err);
+        // Fallback sur les commandes locales
+        const offlineOrders = JSON.parse(localStorage.getItem('integral_offline_orders') || '[]');
+        callback(offlineOrders);
+      }
+    );
+    
+    return ordersUnsubscribe;
+  };
+
+  // ── Synchronisation périodique ───────────────────────────────────
+  setInterval(() => {
+    if (connectionState.network && connectionState.firestore) {
+      syncPendingItems();
+    }
+  }, 30000); // Toutes les 30 secondes
+
+  // ── Démarrer au chargement ───────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(startMenuListener, 800);
+    loadPendingSync();
+    setTimeout(() => {
+      startMenuListener();
+      // Synchroniser immédiatement si en ligne
+      if (connectionState.network) {
+        syncPendingItems();
+      }
+    }, 800);
   });
+
+  // Nettoyer les abonnements à la fermeture
+  window.addEventListener('beforeunload', () => {
+    if (menuUnsubscribe) menuUnsubscribe();
+    if (ordersUnsubscribe) ordersUnsubscribe();
+  });
+
+  // Exposer pour le débogage
+  window._firestoreDebug = {
+    getState: () => connectionState,
+    getPendingSync: () => Array.from(pendingSync.entries()),
+    forceSync: syncPendingItems,
+    reconnect: startMenuListener
+  };
 </script>
 
 <style>
@@ -277,7 +570,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .hero-dot.active{background:var(--gold);width:22px;border-radius:4px}
 
 /* ── BOUTON EXPLORER ─────────────────────────── */
-.hero-explore-wrap{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
+.hero-explore-wrap{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:450;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
 .hero-explore-btn{
   display:inline-flex;align-items:center;gap:8px;
   background:rgba(255,255,255,.13);
@@ -301,7 +594,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 /* ── PANNEAU QUICK-NAV ───────────────────────── */
 #quickNavPanel{
   width:calc(100% - 0px);max-width:700px;
-  background:rgba(6,22,13,.9);
+  background:rgba(6,22,13,.95);
   border:1px solid rgba(255,255,255,.14);
   border-radius:20px;
   backdrop-filter:blur(22px);
@@ -310,6 +603,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
   transition:max-height .45s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .35s ease;
   box-shadow:0 24px 60px rgba(0,0,0,.5);
   margin-top:0;
+  position:relative;z-index:451;
 }
 #quickNavPanel.open{max-height:80vh;opacity:1;margin-top:10px;overflow-y:auto}
 .qnp-header{padding:13px 18px 11px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08)}
@@ -561,192 +855,6 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
   #printArea *{color:#000!important;background:none!important}
 }
 
-/* ── LIVE ORDERS MODAL ──────────────────────── */
-#liveOrdersModal{
-  position:fixed;inset:0;z-index:1200;
-  background:rgba(6,18,12,.97);
-  display:none;flex-direction:column;
-  backdrop-filter:blur(16px);
-  animation:loFadeIn .3s ease;
-}
-#liveOrdersModal.open{display:flex}
-@keyframes loFadeIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
-.lo-head{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:18px 28px;
-  background:linear-gradient(135deg,rgba(26,107,60,.9),rgba(34,139,78,.7));
-  border-bottom:1px solid rgba(201,168,76,.25);
-  flex-shrink:0;
-}
-.lo-head-left{display:flex;align-items:center;gap:14px}
-.lo-logo{font-family:'Cormorant Garamond',serif;font-size:1.35rem;font-weight:700;color:#fff;letter-spacing:.5px}
-.lo-logo em{color:var(--gold);font-style:italic}
-.lo-badge-live{
-  display:inline-flex;align-items:center;gap:6px;
-  background:rgba(81,207,102,.15);border:1px solid rgba(81,207,102,.4);
-  color:#51cf66;font-size:.68rem;font-weight:700;
-  padding:4px 11px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase;
-}
-.lo-badge-live::before{
-  content:'';width:7px;height:7px;border-radius:50%;background:#51cf66;
-  animation:livePulse 1.4s ease-in-out infinite;
-  box-shadow:0 0 0 0 rgba(81,207,102,.5);
-}
-@keyframes livePulse{
-  0%{box-shadow:0 0 0 0 rgba(81,207,102,.5)}
-  70%{box-shadow:0 0 0 7px rgba(81,207,102,0)}
-  100%{box-shadow:0 0 0 0 rgba(81,207,102,0)}
-}
-.lo-head-right{display:flex;align-items:center;gap:10px}
-.lo-count-pill{
-  background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.35);
-  color:var(--gold);font-size:.75rem;font-weight:700;
-  padding:5px 13px;border-radius:20px;
-}
-.lo-sound-btn{
-  background:rgba(255,255,255,.09);border:1.5px solid rgba(255,255,255,.15);
-  color:rgba(255,255,255,.7);width:38px;height:38px;border-radius:10px;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transition:var(--t);font-size:1rem;
-}
-.lo-sound-btn:hover{background:rgba(255,255,255,.18);color:#fff}
-.lo-sound-btn.muted{color:rgba(255,255,255,.3);border-color:rgba(255,255,255,.1)}
-.lo-close-btn{
-  background:rgba(192,57,43,.15);border:1.5px solid rgba(192,57,43,.35);
-  color:#e57373;width:38px;height:38px;border-radius:10px;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;
-  font-size:1.15rem;transition:var(--t);
-}
-.lo-close-btn:hover{background:rgba(192,57,43,.35);color:#fff}
-.lo-toolbar{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:12px 28px;
-  border-bottom:1px solid rgba(255,255,255,.07);
-  flex-shrink:0;
-  gap:12px;flex-wrap:wrap;
-}
-.lo-filters{display:flex;gap:8px;flex-wrap:wrap}
-.lo-filter-btn{
-  padding:6px 14px;border-radius:20px;font-size:.72rem;font-weight:600;
-  border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);
-  color:rgba(255,255,255,.55);cursor:pointer;transition:var(--t);font-family:'DM Sans',sans-serif;
-}
-.lo-filter-btn.active{background:rgba(26,107,60,.6);border-color:var(--g);color:#fff}
-.lo-filter-btn:hover{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.85)}
-.lo-stats-bar{display:flex;gap:16px;align-items:center}
-.lo-stat{text-align:center}
-.lo-stat-val{font-family:'Cormorant Garamond',serif;font-size:1.3rem;font-weight:700;color:#fff;line-height:1}
-.lo-stat-val.gold{color:var(--gold)}
-.lo-stat-lbl{font-size:.62rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-.lo-divider{width:1px;height:32px;background:rgba(255,255,255,.1)}
-.lo-body{
-  flex:1;overflow-y:auto;padding:20px 28px;
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
-  gap:14px;
-  align-content:start;
-  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent;
-}
-.lo-body:empty::after{
-  content:'Aucune commande reçue pour le moment';
-  color:rgba(255,255,255,.22);font-size:.9rem;
-  grid-column:1/-1;text-align:center;padding:60px;
-}
-.lo-empty{
-  grid-column:1/-1;text-align:center;padding:60px 20px;
-  color:rgba(255,255,255,.25);
-}
-.lo-empty svg{width:52px;height:52px;fill:rgba(255,255,255,.1);margin-bottom:16px;display:block;margin-left:auto;margin-right:auto}
-.lo-empty p{font-size:.88rem}
-/* Carte de commande */
-.lo-card{
-  background:rgba(255,255,255,.04);
-  border:1.5px solid rgba(255,255,255,.08);
-  border-radius:16px;padding:18px;
-  display:flex;flex-direction:column;gap:12px;
-  transition:border-color .3s,box-shadow .3s;
-  position:relative;overflow:hidden;
-}
-.lo-card.new-order{
-  border-color:rgba(201,168,76,.6);
-  box-shadow:0 0 0 2px rgba(201,168,76,.15),0 8px 32px rgba(0,0,0,.3);
-  animation:newOrderFlash .8s ease;
-}
-@keyframes newOrderFlash{
-  0%{background:rgba(201,168,76,.18);border-color:var(--gold)}
-  100%{background:rgba(255,255,255,.04);border-color:rgba(201,168,76,.6)}
-}
-.lo-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.lo-card-num{
-  font-family:'Cormorant Garamond',serif;font-size:1.15rem;font-weight:700;color:#fff;
-  display:flex;align-items:center;gap:8px;
-}
-.lo-card-num span{
-  font-family:'DM Sans',sans-serif;font-size:.68rem;font-weight:600;
-  background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);
-  color:var(--gold);padding:3px 9px;border-radius:10px;
-}
-.lo-card-time{font-size:.71rem;color:rgba(255,255,255,.38);white-space:nowrap}
-.lo-card-table{
-  font-size:.76rem;font-weight:600;
-  color:rgba(255,255,255,.55);
-  display:flex;align-items:center;gap:5px;
-}
-.lo-card-table svg{width:13px;height:13px;fill:currentColor;opacity:.7}
-.lo-card-items{
-  border-top:1px solid rgba(255,255,255,.06);
-  padding-top:10px;display:flex;flex-direction:column;gap:5px;
-}
-.lo-card-item{
-  display:flex;align-items:center;justify-content:space-between;
-  font-size:.78rem;
-}
-.lo-card-item-name{color:rgba(255,255,255,.75);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lo-card-item-qty{
-  color:rgba(201,168,76,.8);font-weight:700;font-size:.72rem;
-  background:rgba(201,168,76,.1);padding:2px 7px;border-radius:6px;margin:0 8px;flex-shrink:0;
-}
-.lo-card-item-price{color:rgba(255,255,255,.4);font-size:.72rem;white-space:nowrap;flex-shrink:0}
-.lo-card-footer{
-  display:flex;align-items:center;justify-content:space-between;
-  border-top:1px solid rgba(255,255,255,.06);padding-top:10px;
-}
-.lo-card-total{
-  font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:700;color:#fff;
-}
-.lo-card-total em{font-size:.72rem;color:rgba(255,255,255,.35);font-family:'DM Sans',sans-serif;font-style:normal;margin-right:4px}
-.lo-card-note{
-  font-size:.72rem;color:rgba(255,255,255,.38);
-  background:rgba(255,255,255,.04);border-radius:8px;
-  padding:5px 9px;max-width:55%;text-align:right;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.lo-new-badge{
-  position:absolute;top:12px;right:12px;
-  background:linear-gradient(135deg,var(--gold),#E8C050);
-  color:var(--dark);font-size:.6rem;font-weight:800;
-  padding:3px 9px;border-radius:10px;letter-spacing:.4px;text-transform:uppercase;
-  animation:newBadgePop .4s cubic-bezier(.34,1.56,.64,1);
-}
-@keyframes newBadgePop{from{transform:scale(0)}to{transform:scale(1)}}
-
-/* Triple clic feedback */
-.brand-triple-click-hint{
-  position:absolute;top:60px;left:50%;transform:translateX(-50%);
-  background:rgba(201,168,76,.9);color:var(--dark);
-  font-size:.7rem;font-weight:700;padding:5px 14px;border-radius:20px;
-  white-space:nowrap;z-index:600;pointer-events:none;
-  animation:hintPop .3s ease;
-}
-@keyframes hintPop{from{opacity:0;transform:translateX(-50%) translateY(-6px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-
-@media(max-width:640px){
-  .lo-body{grid-template-columns:1fr;padding:14px 14px}
-  .lo-head{padding:14px 16px}
-  .lo-toolbar{padding:10px 16px}
-  .lo-logo{font-size:1.05rem}
-}
-
 /* Responsive */
 @media(max-width:600px){
   .grid{grid-template-columns:repeat(2,1fr);gap:10px}
@@ -815,41 +923,16 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
 <div id="hero">
   <!-- ══ DIAPORAMA PHOTOS ══
        Remplacez les URL par vos propres photos du restaurant (ex: photo1.jpg) -->
-<div class="hero-slide active" style="background-image:url('images/photo1.jpg')"></div>
-<div class="hero-slide" style="background-image:url('images/photo2.jpg')"></div>
-<div class="hero-slide" style="background-image:url('images/photo3.jpg')"></div>
-<div class="hero-slide" style="background-image:url('images/photo4.jpg')"></div>
+  <div class="hero-slideshow">
+    <div class="hero-slide active" style="background-image:url('images/photo1.jpg')"></div>
+    <div class="hero-slide" style="background-image:url('images/photo2.jpg')"></div>
+    <div class="hero-slide" style="background-image:url('images/photo3.jpg')"></div>
+    <div class="hero-slide" style="background-image:url('images/photo4.jpg')"></div>
   </div>
 
   <div class="hero-bg-pattern"></div>
   <div class="hero-orb hero-orb-1"></div>
   <div class="hero-orb hero-orb-2"></div>
-
-  <!-- ══ BOUTON EXPLORER — AU DESSUS DU LOGO ══ -->
-  <div class="hero-explore-wrap" id="heroExploreWrap">
-    <button class="hero-explore-btn" id="heroExploreBtn" onclick="toggleQuickNav()" aria-expanded="false" aria-controls="quickNavPanel">
-      <span class="e-dot"></span>
-      <svg class="e-icon" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-      Explorer le Menu
-      <svg class="e-icon" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
-    </button>
-
-    <!-- ══ PANNEAU QUICK-NAV ══ -->
-    <div id="quickNavPanel" role="navigation" aria-label="Catégories du menu">
-      <div class="qnp-header">
-        <div class="qnp-title">
-          <svg viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
-          Toutes les catégories
-        </div>
-        <button class="qnp-close" onclick="closeQuickNav()" aria-label="Fermer">✕</button>
-      </div>
-      <div class="qnp-grid" id="qnpGrid">
-        <!-- Généré dynamiquement par JS -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Logo + nom + ville -->
   <img src="logo.png" alt="Integral Logo" style="width:80px;height:80px;object-fit:contain;margin-bottom:12px;position:relative;z-index:1;filter:brightness(0) invert(1)"/>
   <h1>Integral <em>Restaurant</em><br>Bar & Café</h1>
   <p>Ouagadougou · Burkina Faso</p>
@@ -885,6 +968,30 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
     <button class="hero-dot" onclick="goSlide(3)"></button>
   </div>
 </div>
+
+<!-- ══ BOUTON EXPLORER + PANNEAU QUICK-NAV (hors hero, position:fixed) ══ -->
+<div class="hero-explore-wrap" id="heroExploreWrap">
+  <button class="hero-explore-btn" id="heroExploreBtn" onclick="toggleQuickNav()" aria-expanded="false" aria-controls="quickNavPanel">
+    <span class="e-dot"></span>
+    <svg class="e-icon" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    Explorer le Menu
+    <svg class="e-icon" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+  </button>
+  <!-- ══ PANNEAU QUICK-NAV ══ -->
+  <div id="quickNavPanel" role="navigation" aria-label="Catégories du menu">
+    <div class="qnp-header">
+      <div class="qnp-title">
+        <svg viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
+        Toutes les catégories
+      </div>
+      <button class="qnp-close" onclick="closeQuickNav()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="qnp-grid" id="qnpGrid">
+      <!-- Généré dynamiquement par JS -->
+    </div>
+  </div>
+</div>
+
 <!-- Overlay transparent pour fermer le panel -->
 <div id="qnpOverlay" onclick="closeQuickNav()"></div>
 
@@ -1203,41 +1310,6 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
     <div id="qrCanvas"></div>
     <div class="qr-url" id="qrUrl"></div>
     <button class="qr-close" onclick="document.getElementById('qrModal').classList.remove('open')">Fermer</button>
-  </div>
-</div>
-
-<!-- ══ LIVE ORDERS MODAL ══════════════════════════════ -->
-<div id="liveOrdersModal">
-  <div class="lo-head">
-    <div class="lo-head-left">
-      <div class="lo-logo">Integral <em>Restaurant</em> Bar &amp; Café</div>
-      <div class="lo-badge-live">Live</div>
-    </div>
-    <div class="lo-head-right">
-      <div class="lo-count-pill" id="loOrderCount">0 commande</div>
-      <button class="lo-sound-btn" id="loSoundBtn" title="Activer/couper le son" onclick="toggleLiveSound()">🔔</button>
-      <button class="lo-close-btn" onclick="closeLiveOrders()" title="Fermer">✕</button>
-    </div>
-  </div>
-  <div class="lo-toolbar">
-    <div class="lo-filters">
-      <button class="lo-filter-btn active" id="loFilterAll"   onclick="setLoFilter('all',this)">Toutes</button>
-      <button class="lo-filter-btn"        id="loFilterToday" onclick="setLoFilter('today',this)">Aujourd'hui</button>
-      <button class="lo-filter-btn"        id="loFilterHour"  onclick="setLoFilter('hour',this)">Dernière heure</button>
-    </div>
-    <div class="lo-stats-bar">
-      <div class="lo-stat"><div class="lo-stat-val"      id="loStatCount">0</div><div class="lo-stat-lbl">Commandes</div></div>
-      <div class="lo-divider"></div>
-      <div class="lo-stat"><div class="lo-stat-val gold" id="loStatCA">0</div><div class="lo-stat-lbl">F CFA</div></div>
-      <div class="lo-divider"></div>
-      <div class="lo-stat"><div class="lo-stat-val"      id="loStatAvg">0</div><div class="lo-stat-lbl">Moy. ticket</div></div>
-    </div>
-  </div>
-  <div class="lo-body" id="loBody">
-    <div class="lo-empty">
-      <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" fill="currentColor"/></svg>
-      <p>En attente des commandes WhatsApp…</p>
-    </div>
   </div>
 </div>
 
@@ -2500,219 +2572,6 @@ window.addEventListener('load', () => {
   setTimeout(() => document.getElementById('loader').classList.add('hide'), 1600);
   window.renderMenu();
 });
-
-// ══════════════════════════════════════════════════════
-//  LIVE ORDERS PANEL — Triple clic sur le nom du resto
-// ══════════════════════════════════════════════════════
-(function setupLiveOrders(){
-
-  /* ── État ─────────────────────────────────────── */
-  let loOpen       = false;
-  let loUnsub      = null;
-  let loAllOrders  = [];
-  let loKnownIds   = new Set();
-  let loFilter     = 'all';
-  let loSoundOn    = true;
-  let loAudioCtx   = null;
-
-  /* ── Triple-clic sur la marque topbar ─────────── */
-  let clickCount = 0;
-  let clickTimer = null;
-  const brandEl  = document.querySelector('.brand-name');
-  if(brandEl){
-    brandEl.style.cursor = 'pointer';
-    brandEl.addEventListener('click', () => {
-      clickCount++;
-      clearTimeout(clickTimer);
-      clickTimer = setTimeout(() => { clickCount = 0; }, 600);
-      if(clickCount === 2){
-        // Afficher un hint discret
-        const hint = document.createElement('div');
-        hint.className = 'brand-triple-click-hint';
-        hint.textContent = '+ 1 clic pour ouvrir les commandes';
-        document.getElementById('topbar').style.position = 'relative';
-        document.getElementById('topbar').appendChild(hint);
-        setTimeout(() => hint.remove(), 1800);
-      }
-      if(clickCount >= 3){
-        clickCount = 0;
-        clearTimeout(clickTimer);
-        openLiveOrders();
-      }
-    });
-  }
-
-  /* ── Ouvrir la fenêtre ────────────────────────── */
-  window.openLiveOrders = function(){
-    if(loOpen) return;
-    loOpen = true;
-    document.getElementById('liveOrdersModal').classList.add('open');
-    document.body.style.overflow = 'hidden';
-    startLoListener();
-  };
-
-  /* ── Fermer ───────────────────────────────────── */
-  window.closeLiveOrders = function(){
-    loOpen = false;
-    document.getElementById('liveOrdersModal').classList.remove('open');
-    document.body.style.overflow = '';
-    if(loUnsub){ loUnsub(); loUnsub = null; }
-  };
-
-  /* ── Son on/off ───────────────────────────────── */
-  window.toggleLiveSound = function(){
-    loSoundOn = !loSoundOn;
-    const btn = document.getElementById('loSoundBtn');
-    btn.textContent  = loSoundOn ? '🔔' : '🔕';
-    btn.title        = loSoundOn ? 'Son activé' : 'Son désactivé';
-    btn.classList.toggle('muted', !loSoundOn);
-  };
-
-  /* ── Son bip (Web Audio API) ──────────────────── */
-  function playOrderBip(){
-    if(!loSoundOn) return;
-    try {
-      if(!loAudioCtx) loAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const ctx = loAudioCtx;
-      // Séquence : deux bips montants
-      [[880, 0, 0.12], [1100, 0.14, 0.12], [1320, 0.28, 0.18]].forEach(([freq, delay, dur]) => {
-        const osc  = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type      = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
-        gain.gain.setValueAtTime(0, ctx.currentTime + delay);
-        gain.gain.linearRampToValueAtTime(0.22, ctx.currentTime + delay + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
-        osc.start(ctx.currentTime + delay);
-        osc.stop(ctx.currentTime  + delay + dur + 0.05);
-      });
-    } catch(e){ console.warn('Audio:', e); }
-  }
-
-  /* ── Filtre ───────────────────────────────────── */
-  window.setLoFilter = function(f, el){
-    loFilter = f;
-    document.querySelectorAll('.lo-filter-btn').forEach(b => b.classList.remove('active'));
-    if(el) el.classList.add('active');
-    renderLoOrders();
-  };
-
-  /* ── Écoute Firebase ──────────────────────────── */
-  function startLoListener(){
-    if(!window.fbListenOrders){ renderLoEmpty(); return; }
-    loUnsub = window.fbListenOrders(orders => {
-      // Détecter les nouvelles commandes
-      const prevIds    = new Set(loKnownIds);
-      const newOrders  = orders.filter(o => !prevIds.has(o.id));
-      orders.forEach(o => loKnownIds.add(o.id));
-      if(newOrders.length > 0 && prevIds.size > 0){
-        // Il y a vraiment de nouvelles commandes (pas le chargement initial)
-        newOrders.forEach(() => playOrderBip());
-        window._loNewIds = new Set(newOrders.map(o => o.id));
-        setTimeout(() => { window._loNewIds = new Set(); }, 5000);
-      } else {
-        window._loNewIds = new Set();
-      }
-      loAllOrders = orders;
-      renderLoOrders();
-    });
-  }
-
-  /* ── Filtrer les commandes ────────────────────── */
-  function getFilteredOrders(){
-    const now  = Date.now();
-    return loAllOrders.filter(o => {
-      const ts = (o.createdAt?.seconds || 0) * 1000;
-      if(loFilter === 'today'){
-        const d = new Date(ts);
-        const t = new Date();
-        return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
-      }
-      if(loFilter === 'hour') return now - ts < 3600000;
-      return true;
-    });
-  }
-
-  /* ── Rendu ────────────────────────────────────── */
-  function renderLoOrders(){
-    const filtered = getFilteredOrders();
-    const body = document.getElementById('loBody');
-    if(!body) return;
-
-    // Mise à jour stats
-    const totalCA  = filtered.reduce((s,o) => s+(o.total||0), 0);
-    const avg      = filtered.length ? Math.round(totalCA/filtered.length) : 0;
-    document.getElementById('loStatCount').textContent = filtered.length;
-    document.getElementById('loStatCA').textContent    = totalCA.toLocaleString('fr-FR');
-    document.getElementById('loStatAvg').textContent   = avg.toLocaleString('fr-FR');
-    const n = filtered.length;
-    document.getElementById('loOrderCount').textContent = n + ' commande' + (n>1?'s':'');
-
-    if(!filtered.length){
-      body.innerHTML = `<div class="lo-empty">
-        <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" fill="currentColor"/></svg>
-        <p>Aucune commande pour ce filtre</p>
-      </div>`;
-      return;
-    }
-
-    body.innerHTML = filtered.map((o, i) => {
-      const isNew   = window._loNewIds && window._loNewIds.has(o.id);
-      const d       = o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000) : null;
-      const heure   = d ? d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '--:--';
-      const dateStr = d ? d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : '';
-      const num     = filtered.length - i;
-      const items   = o.items || [];
-      const total   = o.total || 0;
-
-      const itemsHtml = items.slice(0,6).map(it => `
-        <div class="lo-card-item">
-          <span class="lo-card-item-name" title="${it.nom}">${it.nom}</span>
-          <span class="lo-card-item-qty">x${it.qty}</span>
-          <span class="lo-card-item-price">${((it.prix||0)*it.qty).toLocaleString('fr-FR')} F</span>
-        </div>`).join('');
-      const moreItems = items.length > 6
-        ? `<div style="font-size:.71rem;color:rgba(255,255,255,.3);margin-top:4px">+ ${items.length-6} autre(s) article(s)</div>` : '';
-
-      return `
-        <div class="lo-card${isNew?' new-order':''}">
-          ${isNew ? '<div class="lo-new-badge">Nouveau !</div>' : ''}
-          <div class="lo-card-top">
-            <div class="lo-card-num">
-              Commande #${num}
-              <span>${heure}${dateStr ? ' · '+dateStr : ''}</span>
-            </div>
-          </div>
-          <div class="lo-card-table">
-            <svg viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z" fill="currentColor"/></svg>
-            ${o.table || 'Non précisé'}
-          </div>
-          <div class="lo-card-items">
-            ${itemsHtml}${moreItems}
-          </div>
-          <div class="lo-card-footer">
-            <div class="lo-card-total"><em>Total</em>${total.toLocaleString('fr-FR')} F CFA</div>
-            ${o.note ? `<div class="lo-card-note" title="${o.note}">📝 ${o.note}</div>` : '<div></div>'}
-          </div>
-        </div>`;
-    }).join('');
-  }
-
-  function renderLoEmpty(){
-    const body = document.getElementById('loBody');
-    if(body) body.innerHTML = `<div class="lo-empty">
-      <svg viewBox="0 0 24 24"><path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.56 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 006.95 0" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
-      <p style="color:rgba(255,255,255,.3)">Firebase non connecté — commandes indisponibles</p>
-    </div>`;
-  }
-
-  /* ── Touche Escape pour fermer ────────────────── */
-  document.addEventListener('keydown', e => {
-    if(e.key === 'Escape' && loOpen) closeLiveOrders();
-  });
-
-})();
 </script>
 </body>
 </html>
