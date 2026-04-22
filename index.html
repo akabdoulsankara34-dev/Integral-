@@ -276,7 +276,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .hero-dot.active{background:var(--gold);width:22px;border-radius:4px}
 
 /* ── BOUTON EXPLORER ─────────────────────────── */
-.hero-explore-wrap{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
+.hero-explore-wrap{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:450;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
 .hero-explore-btn{
   display:inline-flex;align-items:center;gap:8px;
   background:rgba(255,255,255,.13);
@@ -300,7 +300,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 /* ── PANNEAU QUICK-NAV ───────────────────────── */
 #quickNavPanel{
   width:calc(100% - 0px);max-width:700px;
-  background:rgba(6,22,13,.9);
+  background:rgba(6,22,13,.95);
   border:1px solid rgba(255,255,255,.14);
   border-radius:20px;
   backdrop-filter:blur(22px);
@@ -309,6 +309,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
   transition:max-height .45s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .35s ease;
   box-shadow:0 24px 60px rgba(0,0,0,.5);
   margin-top:0;
+  position:relative;z-index:451;
 }
 #quickNavPanel.open{max-height:80vh;opacity:1;margin-top:10px;overflow-y:auto}
 .qnp-header{padding:13px 18px 11px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08)}
