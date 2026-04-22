@@ -29,30 +29,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 
-<!-- ══ FIREBASE SDK ══════════════════════════════════════ -->
-<!--
-  ⚙️  CONFIGURATION FIREBASE — NOUVEAU PROJET (europe-west1 / Belgique)
-  ════════════════════════════════════════════════════════════════════
-  ÉTAPES DE CRÉATION DU NOUVEAU PROJET :
-  1. Allez sur https://console.firebase.google.com
-  2. Cliquez "Ajouter un projet" → donnez un nom (ex: integral-menu)
-  3. Dans Firestore → "Créer une base de données"
-     → Choisissez "europe-west1 (Belgique)" ← IMPORTANT
-     → Mode Production ou Test
-  4. Copiez la config ci-dessous depuis :
-     Paramètres projet ⚙️ → Vos applications → SDK
-  5. Collections à créer dans Firestore :
-     • menu_overrides  (documents avec ID = clé du plat)
-     • orders          (commandes des clients)
-  ════════════════════════════════════════════════════════════════════
--->
+<!-- ══ FIREBASE SDK - VERSION CORRIGÉE ══════════════════════════════════════ -->
 <script type="module">
-  import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, addDoc, doc, setDoc,
-           deleteDoc, onSnapshot, serverTimestamp }
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { 
+    initializeFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
+    collection, 
+    getDocs, 
+    addDoc, 
+    doc, 
+    setDoc,
+    deleteDoc, 
+    onSnapshot, 
+    serverTimestamp,
+    writeBatch,
+    query,
+    orderBy
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // ── Remplacez ces valeurs par celles de votre NOUVEAU projet ──
+  // ── Configuration Firebase ───────────────────────────────────────
   const firebaseConfig = {
     apiKey:            "AIzaSyCIkeCTeqjAWEFML3rkNQs-NWs1b4Lu5Jg",
     authDomain:        "integral-bar-resto.firebaseapp.com",
@@ -63,108 +60,430 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
 
-  // Activer la région europe-west1 pour les nouvelles requêtes
-  window.__DB = db;
-  window.__fb = { collection, getDocs, addDoc, doc, setDoc,
-                  deleteDoc, onSnapshot, serverTimestamp };
-
-  // ── Clé unique par plat ───────────────────────────────────────
-  function itemKey(item){
-    return (item.cat + '_' + item.nom).replace(/[^a-z0-9]/gi,'_').toLowerCase();
-  }
-
-  // ── Applique les overrides sur le MENU en mémoire ────────────
-  function applyOverrides(overrides){
-    window.MENU.forEach(item => {
-      const key = itemKey(item);
-      const ov  = overrides[key];
-      if(!ov) return;
-      if(ov.prix  !== undefined) item.prix  = ov.prix;
-      if(ov.img   !== undefined) item.img   = ov.img;
-      if(ov.dispo !== undefined) item.dispo = ov.dispo;
+  // ── Activer la persistance OFFLINE (multi-onglets) — API Firebase v10 ──
+  let db;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
     });
-    window.renderMenu && window.renderMenu();
-    if(document.getElementById('tab-menu')?.style.display !== 'none'){
-      window.renderMenuEditor && window.renderMenuEditor();
+    console.log('✅ Firestore : Persistance multi-onglets activée (IndexedDB)');
+  } catch (err) {
+    // Fallback : Firestore sans persistance si le navigateur ne supporte pas
+    const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    db = getFirestore(app);
+    if (err.code === 'failed-precondition') {
+      console.warn('⚠️ Persistance : déjà activée dans un autre onglet, mode mémoire utilisé');
+    } else if (err.code === 'unimplemented') {
+      console.warn('⚠️ Navigateur ne supporte pas la persistance IndexedDB');
+    } else {
+      console.warn('⚠️ Persistance non disponible, mode mémoire :', err.message);
     }
   }
 
-  // ── Indicateur connexion (point vert/rouge) ───────────────────
-  function setFbDot(ok){
+  // Exposer les fonctions Firestore globalement
+  window.__DB = db;
+  window.__fb = { 
+    collection, getDocs, addDoc, doc, setDoc, deleteDoc, 
+    onSnapshot, serverTimestamp, writeBatch, query, orderBy 
+  };
+
+  // ── État de connexion amélioré ──────────────────────────────────
+  let isOnline = true;
+  let reconnectTimer = null;
+  let menuUnsubscribe = null;
+  let ordersUnsubscribe = null;
+  
+  const connectionState = {
+    firestore: false,
+    network: navigator.onLine
+  };
+
+  function updateConnectionUI() {
     const dot = document.getElementById('fbDot');
     const lbl = document.getElementById('fbLabel');
-    if(dot){ dot.classList.toggle('ok', ok); }
-    if(lbl){ lbl.textContent = ok ? 'En ligne' : 'Local'; }
+    const isConnected = connectionState.firestore && connectionState.network;
+    
+    if (dot) {
+      dot.classList.toggle('ok', isConnected);
+      dot.style.background = isConnected ? '#51cf66' : '#ff6b6b';
+    }
+    if (lbl) {
+      if (!connectionState.network) lbl.textContent = 'Hors ligne';
+      else if (!connectionState.firestore) lbl.textContent = 'Connexion...';
+      else lbl.textContent = 'En ligne';
+    }
   }
-  window._setFbDot = setFbDot;
 
-  // ── Écoute temps réel du menu (onSnapshot) ───────────────────
-  function startMenuListener(){
-    try {
-      onSnapshot(collection(db, 'menu_overrides'), snap => {
-        const overrides = {};
-        snap.forEach(d => { overrides[d.id] = d.data(); });
-        window.__overrides = overrides;
-        applyOverrides(overrides);
-        setFbDot(true);
-      }, err => {
-        console.warn('Firebase:', err.message);
-        window.renderMenu && window.renderMenu();
-        setFbDot(false);
+  // Surveiller l'état réseau
+  window.addEventListener('online', () => {
+    connectionState.network = true;
+    updateConnectionUI();
+    showToast && showToast('Connexion Internet rétablie', 'green');
+    // Réessayer la connexion Firestore
+    startMenuListener();
+  });
+
+  window.addEventListener('offline', () => {
+    connectionState.network = false;
+    updateConnectionUI();
+    showToast && showToast('Mode hors ligne - Les modifications seront synchronisées', 'gold');
+  });
+
+  window._setFbDot = (ok) => {
+    connectionState.firestore = ok;
+    updateConnectionUI();
+  };
+
+  // ── Clé unique par plat ─────────────────────────────────────────
+  function itemKey(item) {
+    return (item.cat + '_' + item.nom)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase();
+  }
+
+  // ── Fusion intelligente des overrides ───────────────────────────
+  function applyOverrides(overrides) {
+    let changed = false;
+    
+    // Construire un index des clés déjà présentes dans le MENU local
+    const existingKeys = new Set(window.MENU.map(item => itemKey(item)));
+
+    window.MENU.forEach(item => {
+      const key = itemKey(item);
+      const ov = overrides[key];
+      if (!ov) return;
+      
+      // Ne mettre à jour que si différent
+      if (ov.prix !== undefined && ov.prix !== item.prix) {
+        item.prix = ov.prix;
+        changed = true;
+      }
+      if (ov.img !== undefined && ov.img !== item.img) {
+        item.img = ov.img;
+        changed = true;
+      }
+      if (ov.dispo !== undefined && ov.dispo !== item.dispo) {
+        item.dispo = ov.dispo;
+        changed = true;
+      }
+      item._firestoreKey = key;
+    });
+
+    // ── Ajouter les nouveaux plats venant de Firestore ──────────────
+    Object.entries(overrides).forEach(([key, ov]) => {
+      if (existingKeys.has(key)) return;
+      if (!ov.nom || !ov.cat) return;
+      window.MENU.push({
+        cat:           ov.cat,
+        nom:           ov.nom,
+        prix:          ov.prix  ?? 0,
+        img:           ov.img   ?? '',
+        dispo:         ov.dispo ?? true,
+        _firestoreKey: key,
+        _fromFirestore: true
       });
-    } catch(e){
+      changed = true;
+    });
+    
+    if (changed) {
+      // Re-rendre le menu uniquement si des changements
+      window.renderMenu && window.renderMenu();
+      if (document.getElementById('tab-menu')?.style.display !== 'none') {
+        window.renderMenuEditor && window.renderMenuEditor();
+      }
+      
+      // Mettre à jour les quantités dans les cartes
+      if (window.updateAllCardQtyDisplays) {
+        setTimeout(() => window.updateAllCardQtyDisplays(), 50);
+      }
+      
+      showToast && showToast('🍽️ Menu mis à jour depuis le cloud', 'gold');
+    }
+  }
+
+  // ── Écoute temps réel du menu (onSnapshot) avec reconnexion ─────
+  function startMenuListener() {
+    if (menuUnsubscribe) {
+      menuUnsubscribe();
+      menuUnsubscribe = null;
+    }
+    
+    try {
+      const menuRef = collection(db, 'menu_overrides');
+      
+      menuUnsubscribe = onSnapshot(menuRef, 
+        (snap) => {
+          const overrides = {};
+          snap.forEach(d => { overrides[d.id] = d.data(); });
+          window.__overrides = overrides;
+          
+          connectionState.firestore = true;
+          updateConnectionUI();
+          
+          applyOverrides(overrides);
+          
+          // Effacer le timer de reconnexion si actif
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        },
+        (err) => {
+          console.warn('Firestore error:', err.message);
+          connectionState.firestore = false;
+          updateConnectionUI();
+          
+          // Tentative de reconnexion après 5 secondes
+          if (!reconnectTimer && connectionState.network) {
+            reconnectTimer = setTimeout(() => {
+              console.log('🔄 Tentative de reconnexion Firestore...');
+              startMenuListener();
+              reconnectTimer = null;
+            }, 5000);
+          }
+          
+          // Le menu reste fonctionnel en local
+          window.renderMenu && window.renderMenu();
+        }
+      );
+      
+      console.log('📡 Écoute Firestore activée');
+    } catch (e) {
       console.warn('Firebase local mode:', e.message);
+      connectionState.firestore = false;
+      updateConnectionUI();
       window.renderMenu && window.renderMenu();
     }
   }
 
-  // ── Sauvegarder un plat (prix / img / dispo) ─────────────────
-  window.fbSaveItem = async function(item){
+  // ── Sauvegarder un plat avec gestion d'erreur améliorée ─────────
+  window.fbSaveItem = async function(item) {
+    if (!connectionState.network) {
+      showToast && showToast('📴 Mode hors ligne - Sauvegarde locale', 'gold');
+      // Sauvegarde dans localStorage pour synchronisation ultérieure
+      saveToPendingSync(item);
+      return true;
+    }
+    
     try {
-      const key  = item._key || itemKey(item);
-      const data = {};
-      if(item.prix  !== undefined) data.prix  = item.prix;
-      if(item.img   !== undefined) data.img   = item.img;
-      if(item.dispo !== undefined) data.dispo = item.dispo;
-      if(item.cat   !== undefined) data.cat   = item.cat;
-      if(item.nom   !== undefined) data.nom   = item.nom;
+      const key = item._key || itemKey(item);
+      const data = {
+        updatedAt: serverTimestamp(),
+        updatedBy: 'admin'
+      };
+      
+      if (item.prix !== undefined) data.prix = item.prix;
+      if (item.img !== undefined) data.img = item.img;
+      if (item.dispo !== undefined) data.dispo = item.dispo;
+      if (item.cat !== undefined) data.cat = item.cat;
+      if (item.nom !== undefined) data.nom = item.nom;
+      
       await setDoc(doc(db, 'menu_overrides', key), data, { merge: true });
+      
+      showToast && showToast('✅ Synchronisé avec le cloud', 'green');
       return true;
-    } catch(e){ console.error(e); return false; }
+    } catch (e) {
+      console.error('Erreur sauvegarde:', e);
+      showToast && showToast('⚠️ Erreur de synchronisation', 'red');
+      // Sauvegarde pour réessayer plus tard
+      saveToPendingSync(item);
+      return false;
+    }
   };
 
-  // ── Supprimer un plat personnalisé ───────────────────────────
-  window.fbDeleteItem = async function(key){
-    try { await deleteDoc(doc(db, 'menu_overrides', key)); return true; }
-    catch(e){ console.error(e); return false; }
-  };
-
-  // ── Enregistrer une commande ──────────────────────────────────
-  window.fbSaveOrder = async function(order){
-    try {
-      await addDoc(collection(db, 'orders'), {
-        ...order, createdAt: serverTimestamp()
-      });
-      return true;
-    } catch(e){ console.error(e); return false; }
-  };
-
-  // ── Écouter les commandes en temps réel ──────────────────────
-  window.fbListenOrders = function(callback){
-    return onSnapshot(collection(db, 'orders'), snap => {
-      const orders = [];
-      snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
-      orders.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-      callback(orders);
+  // ── File d'attente de synchronisation ───────────────────────────
+  const pendingSync = new Map();
+  
+  function saveToPendingSync(item) {
+    const key = item._key || itemKey(item);
+    pendingSync.set(key, {
+      ...item,
+      _pending: true,
+      _timestamp: Date.now()
     });
+    
+    // Sauvegarder dans localStorage
+    try {
+      const pending = Array.from(pendingSync.entries());
+      localStorage.setItem('integral_pending_sync', JSON.stringify(pending));
+    } catch (e) {}
+  }
+  
+  // Charger les synchronisations en attente
+  function loadPendingSync() {
+    try {
+      const saved = localStorage.getItem('integral_pending_sync');
+      if (saved) {
+        const pending = JSON.parse(saved);
+        pending.forEach(([key, data]) => {
+          pendingSync.set(key, data);
+        });
+      }
+    } catch (e) {}
+  }
+  
+  // Synchroniser les éléments en attente
+  async function syncPendingItems() {
+    if (!connectionState.network || !connectionState.firestore) return;
+    
+    const items = Array.from(pendingSync.entries());
+    if (items.length === 0) return;
+    
+    console.log(`📤 Synchronisation de ${items.length} élément(s) en attente...`);
+    
+    const batch = writeBatch(db);
+    let count = 0;
+    
+    for (const [key, item] of items) {
+      const data = {
+        prix: item.prix,
+        img: item.img,
+        dispo: item.dispo,
+        cat: item.cat,
+        nom: item.nom,
+        updatedAt: serverTimestamp()
+      };
+      
+      const docRef = doc(db, 'menu_overrides', key);
+      batch.set(docRef, data, { merge: true });
+      count++;
+      
+      // Firestore limite à 500 opérations par batch
+      if (count >= 450) break;
+    }
+    
+    try {
+      await batch.commit();
+      
+      // Supprimer les éléments synchronisés
+      items.slice(0, count).forEach(([key]) => pendingSync.delete(key));
+      localStorage.removeItem('integral_pending_sync');
+      
+      if (items.length > 0) {
+        showToast && showToast(`✅ ${count} élément(s) synchronisé(s)`, 'green');
+      }
+    } catch (e) {
+      console.error('Erreur synchronisation batch:', e);
+    }
+  }
+
+  // ── Supprimer un plat personnalisé ───────────────────────────────
+  window.fbDeleteItem = async function(key) {
+    try {
+      await deleteDoc(doc(db, 'menu_overrides', key));
+      showToast && showToast('🗑️ Plat supprimé du cloud', 'gold');
+      return true;
+    } catch (e) {
+      console.error('Erreur suppression:', e);
+      showToast && showToast('⚠️ Erreur de suppression', 'red');
+      return false;
+    }
   };
 
-  // ── Démarrer l'écoute menu au chargement ─────────────────────
+  // ── Enregistrer une commande ─────────────────────────────────────
+  window.fbSaveOrder = async function(order) {
+    try {
+      const orderData = {
+        ...order,
+        createdAt: serverTimestamp(),
+        status: 'nouveau',
+        deviceInfo: {
+          userAgent: navigator.userAgent.substring(0, 100),
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      const docRef = await addDoc(collection(db, 'orders'), orderData);
+      console.log('✅ Commande enregistrée:', docRef.id);
+      return true;
+    } catch (e) {
+      console.error('Erreur commande:', e);
+      // Sauvegarde locale de la commande
+      saveOrderLocally(order);
+      return false;
+    }
+  };
+  
+  // Sauvegarde locale des commandes
+  function saveOrderLocally(order) {
+    try {
+      const orders = JSON.parse(localStorage.getItem('integral_offline_orders') || '[]');
+      orders.push({
+        ...order,
+        _offline: true,
+        _timestamp: Date.now()
+      });
+      localStorage.setItem('integral_offline_orders', JSON.stringify(orders));
+    } catch (e) {}
+  }
+
+  // ── Écouter les commandes en temps réel ──────────────────────────
+  window.fbListenOrders = function(callback) {
+    if (ordersUnsubscribe) {
+      ordersUnsubscribe();
+    }
+    
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    ordersUnsubscribe = onSnapshot(ordersQuery, 
+      (snap) => {
+        const orders = [];
+        snap.forEach(d => {
+          orders.push({ id: d.id, ...d.data() });
+        });
+        callback(orders);
+      },
+      (err) => {
+        console.warn('Erreur écoute commandes:', err);
+        // Fallback sur les commandes locales
+        const offlineOrders = JSON.parse(localStorage.getItem('integral_offline_orders') || '[]');
+        callback(offlineOrders);
+      }
+    );
+    
+    return ordersUnsubscribe;
+  };
+
+  // ── Synchronisation périodique ───────────────────────────────────
+  setInterval(() => {
+    if (connectionState.network && connectionState.firestore) {
+      syncPendingItems();
+    }
+  }, 30000); // Toutes les 30 secondes
+
+  // ── Démarrer au chargement ───────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(startMenuListener, 800);
+    loadPendingSync();
+    setTimeout(() => {
+      startMenuListener();
+      // Synchroniser immédiatement si en ligne
+      if (connectionState.network) {
+        syncPendingItems();
+      }
+    }, 800);
   });
+
+  // Nettoyer les abonnements à la fermeture
+  window.addEventListener('beforeunload', () => {
+    if (menuUnsubscribe) menuUnsubscribe();
+    if (ordersUnsubscribe) ordersUnsubscribe();
+  });
+
+  // Exposer pour le débogage
+  window._firestoreDebug = {
+    getState: () => connectionState,
+    getPendingSync: () => Array.from(pendingSync.entries()),
+    forceSync: syncPendingItems,
+    reconnect: startMenuListener
+  };
 </script>
 
 <style>
@@ -276,7 +595,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--lite);color:var(--dark);m
 .hero-dot.active{background:var(--gold);width:22px;border-radius:4px}
 
 /* ── BOUTON EXPLORER ─────────────────────────── */
-.hero-explore-wrap{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:450;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
+.hero-explore-wrap{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:450;display:flex;flex-direction:column;align-items:center;width:calc(100% - 32px);max-width:700px}
 .hero-explore-btn{
   display:inline-flex;align-items:center;gap:8px;
   background:rgba(255,255,255,.13);
@@ -629,41 +948,16 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
 <div id="hero">
   <!-- ══ DIAPORAMA PHOTOS ══
        Remplacez les URL par vos propres photos du restaurant (ex: photo1.jpg) -->
-<div class="hero-slide active" style="background-image:url('https://i.imgur.com/6AhjTPx.jpeg')"></div>
-<div class="hero-slide" style="background-image:url('https://i.imgur.com/PHPwLPV.jpeg')"></div>
-<div class="hero-slide" style="background-image:url('https://i.imgur.com/kr6QOvv.jpeg')"></div>
-<div class="hero-slide" style="background-image:url('https://i.imgur.com/bS1IxFu.jpeg')"></div>
+  <div class="hero-slideshow">
+    <div class="hero-slide active" style="background-image:url('https://i.imgur.com/6AhjTPx.jpeg')"></div>
+    <div class="hero-slide" style="background-image:url('https://i.imgur.com/PHPwLPV.jpeg')"></div>
+    <div class="hero-slide" style="background-image:url('https://i.imgur.com/kr6QOvv.jpeg')"></div>
+    <div class="hero-slide" style="background-image:url('https://i.imgur.com/bS1IxFu.jpeg')"></div>
   </div>
 
   <div class="hero-bg-pattern"></div>
   <div class="hero-orb hero-orb-1"></div>
   <div class="hero-orb hero-orb-2"></div>
-
-  <!-- ══ BOUTON EXPLORER — AU DESSUS DU LOGO ══ -->
-  <div class="hero-explore-wrap" id="heroExploreWrap">
-    <button class="hero-explore-btn" id="heroExploreBtn" onclick="toggleQuickNav()" aria-expanded="false" aria-controls="quickNavPanel">
-      <span class="e-dot"></span>
-      <svg class="e-icon" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-      Explorer le Menu
-      <svg class="e-icon" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
-    </button>
-
-    <!-- ══ PANNEAU QUICK-NAV ══ -->
-    <div id="quickNavPanel" role="navigation" aria-label="Catégories du menu">
-      <div class="qnp-header">
-        <div class="qnp-title">
-          <svg viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
-          Toutes les catégories
-        </div>
-        <button class="qnp-close" onclick="closeQuickNav()" aria-label="Fermer">✕</button>
-      </div>
-      <div class="qnp-grid" id="qnpGrid">
-        <!-- Généré dynamiquement par JS -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Logo + nom + ville -->
   <img src="logo.png" alt="Integral Logo" style="width:80px;height:80px;object-fit:contain;margin-bottom:12px;position:relative;z-index:1;filter:brightness(0) invert(1)"/>
   <h1>Integral <em>Restaurant</em><br>Bar & Café</h1>
   <p>Ouagadougou · Burkina Faso</p>
@@ -699,6 +993,30 @@ main{max-width:1280px;margin:0 auto;padding:0 16px 120px}
     <button class="hero-dot" onclick="goSlide(3)"></button>
   </div>
 </div>
+
+<!-- ══ BOUTON EXPLORER + PANNEAU QUICK-NAV (hors hero, position:fixed) ══ -->
+<div class="hero-explore-wrap" id="heroExploreWrap">
+  <button class="hero-explore-btn" id="heroExploreBtn" onclick="toggleQuickNav()" aria-expanded="false" aria-controls="quickNavPanel">
+    <span class="e-dot"></span>
+    <svg class="e-icon" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    Explorer le Menu
+    <svg class="e-icon" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+  </button>
+  <!-- ══ PANNEAU QUICK-NAV ══ -->
+  <div id="quickNavPanel" role="navigation" aria-label="Catégories du menu">
+    <div class="qnp-header">
+      <div class="qnp-title">
+        <svg viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
+        Toutes les catégories
+      </div>
+      <button class="qnp-close" onclick="closeQuickNav()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="qnp-grid" id="qnpGrid">
+      <!-- Généré dynamiquement par JS -->
+    </div>
+  </div>
+</div>
+
 <!-- Overlay transparent pour fermer le panel -->
 <div id="qnpOverlay" onclick="closeQuickNav()"></div>
 
@@ -1925,6 +2243,26 @@ function renderOrders(orders){
 }
 
 // ── Menu Editor
+// Patch : forcer le rafraîchissement des images après mise à jour Firestore
+const originalApplyOverrides = window.applyOverrides;
+window.applyOverrides = function(overrides) {
+  const result = originalApplyOverrides(overrides);
+  // Mise à jour des images dans le DOM existant
+  window.MENU.forEach(item => {
+    if(item._firestoreKey && overrides[item._firestoreKey]?.img) {
+      const newImg = getItemImageUrl(item);
+      document.querySelectorAll(`.card[data-nom="${CSS.escape(item.nom)}"] .card-img`).forEach(img => {
+        if(img.src !== newImg) {
+          img.src = newImg;
+          img.style.display = '';
+          const fallback = img.nextElementSibling;
+          if(fallback) fallback.style.display = 'none';
+        }
+      });
+    }
+  });
+  return result;
+};
 window.renderMenuEditor = function(){
   const container = document.getElementById('menuEditorList');
   if(!container) return;
